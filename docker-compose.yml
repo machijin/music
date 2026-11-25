@@ -2,6 +2,9 @@ services:
   music:
     build: .
     image: sheet-music
+    # Built on the server, never downloaded: stops "Pull and redeploy" from asking
+    # Docker Hub for an image called sheet-music, and rebuilds on every deploy.
+    pull_policy: build
     restart: unless-stopped
     ports:
       - "8093:8000"
