@@ -21,7 +21,12 @@ RUN sh /v/vendor.sh /v/out
 FROM eclipse-temurin:25-jre-noble
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv poppler-utils fontconfig fonts-dejavu-core \
- && rm -rf /var/lib/apt/lists/*
+      tesseract-ocr-eng tesseract-ocr-jpn \
+ && rm -rf /var/lib/apt/lists/* \
+ && test -f /usr/share/tesseract-ocr/5/tessdata/jpn.traineddata
+# OCR data for titles and lyrics (English and Japanese). Without it Audiveris reads
+# lyrics as music symbols (stray fermatas, accents, octave signs).
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 COPY --from=audiveris /opt/audiveris /opt/audiveris
 RUN python3 -m venv /venv
 COPY requirements.txt /app/requirements.txt
@@ -29,7 +34,9 @@ RUN /venv/bin/pip install --no-cache-dir -r /app/requirements.txt
 COPY app /app/app
 COPY --from=vendor /v/out /app/app/static/vendor
 WORKDIR /app
-ENV DATA_DIR=/data JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
+# JAVA_OPTS, not JAVA_TOOL_OPTIONS: the latter makes java print a notice that breaks
+# the version check in Audiveris's start script ("[: Picked: unexpected operator").
+ENV DATA_DIR=/data JAVA_OPTS="-Djava.awt.headless=true"
 VOLUME /data
 EXPOSE 8000
 CMD ["/venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

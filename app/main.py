@@ -17,6 +17,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 JOBS_DIR = DATA_DIR / "jobs"
 AUDIVERIS = os.environ.get("AUDIVERIS_BIN", "/opt/audiveris/bin/Audiveris")
 TIMEOUT = int(os.environ.get("OMR_TIMEOUT", "900"))
+OCR_LANGUAGES = os.environ.get("OCR_LANGUAGES", "eng+jpn")  # Tesseract codes, joined by +
 ALLOWED = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,7 +76,9 @@ def _run(d: Path) -> None:
         job = _update(d, status="working", started=time.time())
         out = d / "out"
         out.mkdir(exist_ok=True)
-        cmd = [AUDIVERIS, "-batch", "-export", "-output", str(out), "--", str(d / job["input"])]
+        cmd = [AUDIVERIS, "-batch", "-export",
+               "-constant", f"org.audiveris.omr.text.Language.defaultSpecification={OCR_LANGUAGES}",
+               "-output", str(out), "--", str(d / job["input"])]
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
             (d / "audiveris.log").write_text(p.stdout + "\n" + p.stderr)
