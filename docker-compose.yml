@@ -1,0 +1,9 @@
+services:
+  music:
+    build: .
+    image: sheet-music
+    restart: unless-stopped
+    ports:
+      - "8093:8000"
+    volumes:
+      - ${MUSIC_DIR:-./data}:/data

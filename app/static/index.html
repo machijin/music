@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheet Music</title>
+<style>
+  :root { --bg:#faf8f4; --fg:#222; --muted:#6b6b6b; --card:#fff; --line:#e4e0d8; --accent:#2f6f5e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1c1c1c; --fg:#eee; --muted:#a0a0a0; --card:#262626; --line:#3a3a3a; --accent:#6cc0a8; }
+    #score svg { filter: invert(1) hue-rotate(180deg); }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header, main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:28px; text-align:center; background:var(--card); cursor:pointer; }
+  .drop.over { border-color: var(--accent); }
+  button, .btn { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; text-decoration:none; display:inline-block; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  ul { list-style:none; padding:0; }
+  li { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
+  #score { background:#fff; border-radius:8px; overflow:hidden; }
+  #score svg { width:100%; height:auto; display:block; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><h1>🎼 Sheet Music</h1></header>
+<main>
+  <section id="home">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" hidden>
+      <strong>Upload sheet music</strong><br>
+      <span class="muted">PDF or a photo of a printed score. Reading it takes a minute or two.</span>
+    </label>
+    <ul id="list"></ul>
+  </section>
+
+  <section id="viewer" class="hidden">
+    <div class="bar">
+      <button id="back">← All scores</button>
+      <strong id="title"></strong>
+    </div>
+    <div class="bar">
+      <button id="prev">◀</button><span id="page" class="muted"></span><button id="next">▶</button>
+      <button id="play" class="primary">▶ Play</button>
+      <a class="btn" id="dl-mxl">Download .mxl</a>
+      <a class="btn" id="dl-mid" download>Download MIDI</a>
+    </div>
+    <div id="score"></div>
+  </section>
+</main>
+
+<script src="vendor/verovio-toolkit-wasm.js" defer></script>
+<script src="vendor/Tone.js" defer></script>
+<script src="vendor/Midi.js" defer></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let tk = null, page = 1, pages = 1, midiB64 = null, playing = null;
+
+const STATUS = { queued: "Waiting…", working: "Reading the music…", failed: "Couldn't read it", done: "" };
+
+async function refresh() {
+  const jobs = await (await fetch("api/scores")).json();
+  $("list").innerHTML = "";
+  for (const j of jobs) {
+    const li = document.createElement("li");
+    const left = document.createElement("div");
+    left.innerHTML = `<div></div><div class="muted"></div>`;
+    left.children[0].textContent = j.title;
+    left.children[1].textContent = j.status === "failed" ? (j.error || STATUS.failed) : STATUS[j.status];
+    li.append(left);
+    if (j.status === "done") {
+      const b = document.createElement("button");
+      b.className = "primary"; b.textContent = "Open";
+      b.onclick = () => openScore(j);
+      li.append(b);
+    } else if (j.status === "failed") {
+      const a = document.createElement("a");
+      a.className = "btn"; a.textContent = "Log"; a.href = `api/scores/${j.id}/log`; a.target = "_blank";
+      li.append(a);
+    }
+    $("list").append(li);
+  }
+  if (jobs.some(j => j.status === "queued" || j.status === "working")) setTimeout(refresh, 3000);
+}
+
+async function upload(file) {
+  const fd = new FormData(); fd.append("file", file);
+  const r = await fetch("api/scores", { method: "POST", body: fd });
+  if (!r.ok) alert((await r.json()).detail || "Upload failed");
+  refresh();
+}
+
+$("file").onchange = (e) => e.target.files[0] && upload(e.target.files[0]);
+const drop = $("drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
+
+function toolkit() {
+  if (tk) return Promise.resolve(tk);
+  return new Promise((ok) => {
+    const ready = () => { tk = new verovio.toolkit(); ok(tk); };
+    if (verovio.module.calledRun) ready(); else verovio.module.onRuntimeInitialized = ready;
+  });
+}
+
+function render() {
+  const w = Math.max(320, $("score").clientWidth || document.body.clientWidth - 32);
+  tk.setOptions({ pageWidth: Math.round(w * 100 / 40), scale: 40, adjustPageHeight: true, breaks: "auto" });
+  tk.redoLayout();
+  pages = tk.getPageCount();
+  page = Math.min(page, pages);
+  $("score").innerHTML = tk.renderToSVG(page);
+  $("page").textContent = `page ${page} of ${pages}`;
+}
+
+async function openScore(j) {
+  stop();
+  $("home").classList.add("hidden"); $("viewer").classList.remove("hidden");
+  $("title").textContent = j.title;
+  $("dl-mxl").href = `api/scores/${j.id}/score.mxl`;
+  $("score").innerHTML = "<p class='muted' style='padding:16px'>Loading…</p>";
+  const buf = await (await fetch(`api/scores/${j.id}/score.mxl`)).arrayBuffer();
+  await toolkit();
+  tk.loadZipDataBuffer(buf);
+  page = 1; render();
+  midiB64 = tk.renderToMIDI();
+  $("dl-mid").href = "data:audio/midi;base64," + midiB64;
+  $("dl-mid").download = j.title + ".mid";
+}
+
+$("back").onclick = () => { stop(); $("viewer").classList.add("hidden"); $("home").classList.remove("hidden"); refresh(); };
+$("prev").onclick = () => { if (page > 1) { page--; render(); } };
+$("next").onclick = () => { if (page < pages) { page++; render(); } };
+window.addEventListener("resize", () => { if (tk && !$("viewer").classList.contains("hidden")) render(); });
+
+function stop() {
+  if (playing) { playing.dispose(); playing = null; Tone.Transport.stop(); Tone.Transport.cancel(); }
+  $("play").textContent = "▶ Play";
+}
+
+$("play").onclick = async () => {
+  if (playing) return stop();
+  await Tone.start();
+  const bytes = Uint8Array.from(atob(midiB64), c => c.charCodeAt(0));
+  const midi = new Midi(bytes);
+  playing = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.005, decay: 0.3, sustain: 0.2, release: 0.8 } }).toDestination();
+  playing.volume.value = -10;
+  let end = 0;
+  for (const track of midi.tracks) for (const n of track.notes) {
+    Tone.Transport.schedule((t) => playing && playing.triggerAttackRelease(n.name, n.duration, t, n.velocity), n.time);
+    end = Math.max(end, n.time + n.duration);
+  }
+  Tone.Transport.schedule(() => stop(), end + 1);
+  Tone.Transport.start("+0.1");
+  $("play").textContent = "■ Stop";
+};
+
+refresh();
+</script>
+</body>
+</html>
