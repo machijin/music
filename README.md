@@ -4,6 +4,15 @@ A self-hosted service that turns scanned or photographed sheet music into **Musi
 
 Upload a PDF or a photo of a printed score. [Audiveris](https://github.com/Audiveris/audiveris) reads it, then the page shows the score, plays it, and offers `.mxl` and MIDI downloads.
 
+## Using it
+
+- **Library:** upload by tapping the box or dropping a file on it. Each score gets a card with a picture of its first page. Search filters by title and composer. The ⋯ button renames a score, adds the composer, downloads the original or the `.mxl`, shows the Audiveris log, or deletes it.
+- **Reader:** tap a card. Each screen is one page. Tap the right two thirds of the page to turn forward and the left third to go back. Arrow and Page Up/Down keys work too, so Bluetooth page-turn pedals do as well.
+  - **A− / A+** changes the size, **♭ / ♯** transposes by a semitone, and the slider sets the speed (40–150%). These are saved per score on the server, so the tablet and phone match.
+  - **🔁 Loop:** tap the first bar, then the last. Play repeats those bars. Tap the button again to clear the loop.
+  - **▶ Play** plays the score with the current notes highlighted, turning pages as it goes. Space starts and stops playback.
+  - **⛶** goes full screen and hides the controls; ☰ in the corner brings them back. The screen only stays awake over HTTPS (browser rule), so on plain `http://` set the tablet's auto-lock to "never" while practicing.
+
 ## Run it
 
 ```sh
@@ -23,13 +32,13 @@ For Portainer: add a **Repository** stack pointing at this repo with `docker-com
 
 ## How it works
 
-- `app/main.py`: FastAPI. `POST /api/scores` stores the upload in `data/jobs/<id>/` and runs `Audiveris -batch -export` in the background. `GET /api/scores` lists jobs, `GET /api/scores/<id>/score.mxl` downloads the result, `GET /api/scores/<id>/log` shows the Audiveris log when a job fails.
-- `app/static/index.html`: upload, list, and a viewer. Verovio draws the score and makes the MIDI; Tone.js plays it.
+- `app/main.py`: FastAPI. `POST /api/scores` stores the upload in `data/jobs/<id>/`, makes `thumb.png` (pdftoppm or Pillow), and runs `Audiveris -batch -export` in the background, one job at a time. `GET /api/scores` lists jobs; `PATCH /api/scores/<id>` changes `title`, `composer` or reader `settings`; `DELETE` removes a score. Files: `score.mxl`, `thumb.png`, `original`, `log`.
+- `app/static/index.html`: library (`#`) and reader (`#score/<id>`). Verovio draws the score page by page, transposes, makes the MIDI and the timing map used for looping and following along; Tone.js plays it.
 - The browser libraries are fetched from npm at build time (`tools/vendor.sh`), so nothing loads from a CDN at runtime. For local development without Docker, run `sh tools/vendor.sh` once.
 
 ## Plan
 
-1. Upload, view, play and download (this slice).
-2. Library: titles, thumbnails, search, delete.
-3. Reader mode for a tablet on the piano stand: big page turns, transpose, tempo, loop a section.
+1. Upload, view, play and download (built).
+2. Library: titles, thumbnails, search, delete (built).
+3. Reader mode for a tablet on the piano stand: page turns, transpose, tempo, loop a section (built).
 4. Corrections (upload a fixed `.mxl`) and a link to the kidhub 🎹 Piano tab.

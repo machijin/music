@@ -18,7 +18,7 @@ RUN sh /v/vendor.sh /v/out
 # Stage 3: the web service.
 FROM eclipse-temurin:25-jre
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv fontconfig fonts-dejavu-core \
+      python3 python3-venv poppler-utils fontconfig fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=audiveris /opt/audiveris /opt/audiveris
 RUN python3 -m venv /venv

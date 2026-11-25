@@ -2,90 +2,189 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sheet Music</title>
 <style>
-  :root { --bg:#faf8f4; --fg:#222; --muted:#6b6b6b; --card:#fff; --line:#e4e0d8; --accent:#2f6f5e; }
+  :root { --bg:#faf8f4; --fg:#222; --muted:#6b6b6b; --card:#fff; --line:#e4e0d8; --accent:#2f6f5e; --danger:#b3261e; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#1c1c1c; --fg:#eee; --muted:#a0a0a0; --card:#262626; --line:#3a3a3a; --accent:#6cc0a8; }
-    #score svg { filter: invert(1) hue-rotate(180deg); }
+    :root { --bg:#1c1c1c; --fg:#eee; --muted:#a0a0a0; --card:#262626; --line:#3a3a3a; --accent:#6cc0a8; --danger:#f2b8b5; }
   }
   * { box-sizing: border-box; }
-  body { margin:0; font:16px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  header, main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui, sans-serif; }
+  header, main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 1.4rem; margin: 0; }
-  .drop { border:2px dashed var(--line); border-radius:12px; padding:28px; text-align:center; background:var(--card); cursor:pointer; }
-  .drop.over { border-color: var(--accent); }
-  button, .btn { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; text-decoration:none; display:inline-block; }
+  button, .btn { font:inherit; min-height:40px; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  ul { list-style:none; padding:0; }
-  li { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--line); }
+  button.danger { color:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=text], input[type=search] { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); width:100%; }
   .muted { color: var(--muted); font-size: .9rem; }
-  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
-  #score { background:#fff; border-radius:8px; overflow:hidden; }
-  #score svg { width:100%; height:auto; display:block; }
-  .hidden { display:none; }
+  .hidden { display:none !important; }
+
+  /* Library */
+  .drop { display:block; border:2px dashed var(--line); border-radius:12px; padding:24px; text-align:center; background:var(--card); cursor:pointer; margin-bottom:16px; }
+  .drop.over { border-color: var(--accent); }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:16px; margin-top:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+  .thumb { aspect-ratio: 3/4; background:#fff center top / cover no-repeat; border:0; border-radius:0; padding:0; width:100%; display:flex; align-items:center; justify-content:center; font-size:2.5rem; color:#bbb; }
+  .card .meta { padding:8px 10px; display:flex; gap:6px; align-items:flex-start; }
+  .card .meta div { flex:1; min-width:0; }
+  .card .t { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card .more { min-height:32px; padding:4px 8px; }
+  .status { padding:4px 10px 8px; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg); width:min(420px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog label { display:block; margin:10px 0; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+
+  /* Reader */
+  #reader { position:fixed; inset:0; display:flex; flex-direction:column; background:var(--bg); }
+  .bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--card); }
+  .bar .title { font-weight:600; margin-right:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:40vw; }
+  .group { display:inline-flex; align-items:center; gap:4px; }
+  .group span { min-width:3.2em; text-align:center; font-variant-numeric: tabular-nums; }
+  #tempo { width:110px; }
+  #stage { flex:1; position:relative; overflow:hidden; display:flex; justify-content:center; align-items:flex-start; background:#fff; touch-action: manipulation; }
+  #score svg { display:block; }
+  #pageinfo { position:absolute; right:12px; bottom:10px; font-size:.85rem; color:#888; pointer-events:none; }
+  #hint { position:absolute; left:50%; top:12px; transform:translateX(-50%); background:var(--accent); color:#fff; padding:6px 12px; border-radius:20px; font-size:.9rem; }
+  #score g.note.playing, #score g.note.playing * { fill:#d1495b; stroke:#d1495b; }
+  #score g.measure.inloop > g.staff > *:not(g), #score g.measure.inloop g.note * { fill:#2f6f5e; stroke:#2f6f5e; }
+  body.full .bar { display:none; }
+  #exitfull { position:absolute; left:10px; bottom:10px; opacity:.5; z-index:2; }
+  body:not(.full) #exitfull { display:none; }
+  @media (max-width: 700px) { .bar .title { max-width:100%; flex-basis:100%; } }
 </style>
 </head>
 <body>
 <header><h1>🎼 Sheet Music</h1></header>
-<main>
-  <section id="home">
-    <label class="drop" id="drop">
-      <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" hidden>
-      <strong>Upload sheet music</strong><br>
-      <span class="muted">PDF or a photo of a printed score. Reading it takes a minute or two.</span>
-    </label>
-    <ul id="list"></ul>
-  </section>
 
-  <section id="viewer" class="hidden">
-    <div class="bar">
-      <button id="back">← All scores</button>
-      <strong id="title"></strong>
-    </div>
-    <div class="bar">
-      <button id="prev">◀</button><span id="page" class="muted"></span><button id="next">▶</button>
-      <button id="play" class="primary">▶ Play</button>
-      <a class="btn" id="dl-mxl">Download .mxl</a>
-      <a class="btn" id="dl-mid" download>Download MIDI</a>
-    </div>
-    <div id="score"></div>
-  </section>
+<main id="library">
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" hidden>
+    <strong>Upload sheet music</strong><br>
+    <span class="muted">PDF or a photo of a printed score. Reading it takes a minute or two.</span>
+  </label>
+  <input type="search" id="search" placeholder="Search titles and composers">
+  <div class="grid" id="grid"></div>
+  <p class="muted hidden" id="empty">No scores yet. Upload one above.</p>
 </main>
+
+<dialog id="edit">
+  <form method="dialog" id="editform">
+    <strong>Edit score</strong>
+    <label>Title<input type="text" id="e-title"></label>
+    <label>Composer<input type="text" id="e-composer"></label>
+    <div class="row">
+      <button class="primary" value="save">Save</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </div>
+    <div class="row">
+      <a class="btn" id="e-original">Original file</a>
+      <a class="btn" id="e-mxl">.mxl</a>
+      <a class="btn" id="e-log" target="_blank">Log</a>
+      <button type="button" class="danger" id="e-delete">Delete</button>
+    </div>
+  </form>
+</dialog>
+
+<section id="reader" class="hidden">
+  <div class="bar">
+    <button id="back" title="All scores">←</button>
+    <span class="title" id="title"></span>
+    <span class="group"><button id="zoomout" title="Smaller">A−</button><button id="zoomin" title="Bigger">A+</button></span>
+    <span class="group" title="Transpose (semitones)"><button id="tdown">♭</button><span id="tval">Key 0</span><button id="tup">♯</button></span>
+    <span class="group" title="Speed"><input type="range" id="tempo" min="40" max="150" step="5"><span id="tempoval">100%</span></span>
+    <button id="loop" title="Tap the first and last bar to loop">🔁 Loop</button>
+    <button id="play" class="primary">▶ Play</button>
+    <button id="full" title="Full screen">⛶</button>
+    <a class="btn" id="dl-mid" title="Download MIDI">MIDI</a>
+  </div>
+  <div id="stage">
+    <div id="score"></div>
+    <span id="pageinfo"></span>
+    <span id="hint" class="hidden"></span>
+    <button id="exitfull" title="Show controls">☰</button>
+  </div>
+</section>
 
 <script src="vendor/verovio-toolkit-wasm.js" defer></script>
 <script src="vendor/Tone.js" defer></script>
 <script src="vendor/Midi.js" defer></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let tk = null, page = 1, pages = 1, midiB64 = null, playing = null;
-
 const STATUS = { queued: "Waiting…", working: "Reading the music…", failed: "Couldn't read it", done: "" };
+let jobs = [], editing = null, pollTimer = null;
 
+// ---------- Library ----------
 async function refresh() {
-  const jobs = await (await fetch("api/scores")).json();
-  $("list").innerHTML = "";
-  for (const j of jobs) {
-    const li = document.createElement("li");
-    const left = document.createElement("div");
-    left.innerHTML = `<div></div><div class="muted"></div>`;
-    left.children[0].textContent = j.title;
-    left.children[1].textContent = j.status === "failed" ? (j.error || STATUS.failed) : STATUS[j.status];
-    li.append(left);
-    if (j.status === "done") {
-      const b = document.createElement("button");
-      b.className = "primary"; b.textContent = "Open";
-      b.onclick = () => openScore(j);
-      li.append(b);
-    } else if (j.status === "failed") {
-      const a = document.createElement("a");
-      a.className = "btn"; a.textContent = "Log"; a.href = `api/scores/${j.id}/log`; a.target = "_blank";
-      li.append(a);
+  clearTimeout(pollTimer);
+  jobs = await (await fetch("api/scores")).json();
+  drawGrid();
+  if (jobs.some(j => j.status === "queued" || j.status === "working")) pollTimer = setTimeout(refresh, 3000);
+}
+
+function drawGrid() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = jobs.filter(j => !q || (j.title + " " + (j.composer || "")).toLowerCase().includes(q));
+  $("grid").innerHTML = "";
+  $("empty").classList.toggle("hidden", jobs.length > 0);
+  for (const j of shown) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const thumb = document.createElement("button");
+    thumb.className = "thumb";
+    thumb.style.backgroundImage = `url("api/scores/${j.id}/thumb.png")`;
+    thumb.disabled = j.status !== "done";
+    thumb.title = j.status === "done" ? "Open" : "";
+    thumb.onclick = () => { location.hash = "score/" + j.id; };
+    const img = new Image();
+    img.onerror = () => { thumb.style.backgroundImage = "none"; thumb.textContent = "🎼"; };
+    img.src = `api/scores/${j.id}/thumb.png`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `<div><div class="t"></div><div class="muted"></div></div><button class="more" title="Edit">⋯</button>`;
+    meta.querySelector(".t").textContent = j.title;
+    meta.querySelector(".muted").textContent = j.composer || "";
+    meta.querySelector(".more").onclick = () => openEdit(j);
+    card.append(thumb, meta);
+    const st = j.status === "failed" ? (j.error || STATUS.failed) : STATUS[j.status];
+    if (st) {
+      const s = document.createElement("div");
+      s.className = "status muted"; s.textContent = st;
+      card.append(s);
     }
-    $("list").append(li);
+    $("grid").append(card);
   }
-  if (jobs.some(j => j.status === "queued" || j.status === "working")) setTimeout(refresh, 3000);
+}
+
+function openEdit(j) {
+  editing = j;
+  $("e-title").value = j.title;
+  $("e-composer").value = j.composer || "";
+  $("e-original").href = `api/scores/${j.id}/original`;
+  $("e-mxl").href = `api/scores/${j.id}/score.mxl`;
+  $("e-mxl").classList.toggle("hidden", j.status !== "done");
+  $("e-log").href = `api/scores/${j.id}/log`;
+  $("e-log").classList.toggle("hidden", j.status !== "done" && j.status !== "failed");
+  $("e-delete").disabled = j.status === "queued" || j.status === "working";
+  $("edit").showModal();
+}
+
+$("edit").onclose = async () => {
+  if ($("edit").returnValue !== "save" || !editing) return;
+  await patch(editing.id, { title: $("e-title").value, composer: $("e-composer").value });
+  refresh();
+};
+$("e-delete").onclick = async () => {
+  if (!confirm(`Delete "${editing.title}"? This can't be undone.`)) return;
+  const r = await fetch(`api/scores/${editing.id}`, { method: "DELETE" });
+  if (!r.ok) alert((await r.json()).detail || "Delete failed");
+  $("edit").close(); refresh();
+};
+
+function patch(id, body) {
+  return fetch(`api/scores/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 
 async function upload(file) {
@@ -95,11 +194,20 @@ async function upload(file) {
   refresh();
 }
 
-$("file").onchange = (e) => e.target.files[0] && upload(e.target.files[0]);
+$("search").oninput = drawGrid;
+$("file").onchange = (e) => { e.target.files[0] && upload(e.target.files[0]); e.target.value = ""; };
 const drop = $("drop");
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
 drop.ondragleave = () => drop.classList.remove("over");
 drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
+
+// ---------- Reader ----------
+let tk = null, buf = null, cur = null, page = 1, pages = 1, midiB64 = null;
+let opts = { zoom: 45, transpose: 0, tempo: 100 };
+let loop = null;          // { from: measureIndex, to: measureIndex }
+let picking = null;       // null | "from" | "to"
+let measures = [];        // [{ id, ms }] in playing order
+let player = null, raf = null, wakeLock = null, saveTimer = null;
 
 function toolkit() {
   if (tk) return Promise.resolve(tk);
@@ -109,59 +217,235 @@ function toolkit() {
   });
 }
 
-function render() {
-  const w = Math.max(320, $("score").clientWidth || document.body.clientWidth - 32);
-  tk.setOptions({ pageWidth: Math.round(w * 100 / 40), scale: 40, adjustPageHeight: true, breaks: "auto" });
-  tk.redoLayout();
-  pages = tk.getPageCount();
-  page = Math.min(page, pages);
-  $("score").innerHTML = tk.renderToSVG(page);
-  $("page").textContent = `page ${page} of ${pages}`;
+async function openScore(id) {
+  stop();
+  const j = await (await fetch(`api/scores/${id}`)).json();
+  if (j.status !== "done") { location.hash = ""; return; }
+  cur = j;
+  opts = { zoom: 45, transpose: 0, tempo: 100, ...(j.settings || {}) };
+  loop = null; picking = null;
+  $("library").classList.add("hidden"); document.querySelector("header").classList.add("hidden");
+  $("reader").classList.remove("hidden");
+  $("title").textContent = j.title + (j.composer ? " · " + j.composer : "");
+  $("score").innerHTML = "";
+  $("pageinfo").textContent = "Loading…";
+  buf = await (await fetch(`api/scores/${id}/score.mxl`)).arrayBuffer();
+  await toolkit();
+  page = 1;
+  load();
 }
 
-async function openScore(j) {
-  stop();
-  $("home").classList.add("hidden"); $("viewer").classList.remove("hidden");
-  $("title").textContent = j.title;
-  $("dl-mxl").href = `api/scores/${j.id}/score.mxl`;
-  $("score").innerHTML = "<p class='muted' style='padding:16px'>Loading…</p>";
-  const buf = await (await fetch(`api/scores/${j.id}/score.mxl`)).arrayBuffer();
-  await toolkit();
+// (Re)load the score: needed when the transposition changes.
+function load() {
+  tk.setOptions({ transpose: opts.transpose ? String(opts.transpose) : "" });
   tk.loadZipDataBuffer(buf);
-  page = 1; render();
+  const tm = tk.renderToTimemap({ includeMeasures: true });
+  measures = tm.filter(e => e.measureOn).map(e => ({ id: e.measureOn, ms: e.tstamp }));
   midiB64 = tk.renderToMIDI();
   $("dl-mid").href = "data:audio/midi;base64," + midiB64;
-  $("dl-mid").download = j.title + ".mid";
+  $("dl-mid").download = cur.title + ".mid";
+  layout();
+  showControls();
 }
 
-$("back").onclick = () => { stop(); $("viewer").classList.add("hidden"); $("home").classList.remove("hidden"); refresh(); };
-$("prev").onclick = () => { if (page > 1) { page--; render(); } };
-$("next").onclick = () => { if (page < pages) { page++; render(); } };
-window.addEventListener("resize", () => { if (tk && !$("viewer").classList.contains("hidden")) render(); });
+// One screen = one page, like a book.
+function layout() {
+  const st = $("stage");
+  const z = opts.zoom;
+  tk.setOptions({
+    scale: z, adjustPageHeight: false, breaks: "auto",
+    pageWidth: Math.round(st.clientWidth * 100 / z), pageHeight: Math.round(st.clientHeight * 100 / z),
+    pageMarginTop: 40, pageMarginBottom: 40, pageMarginLeft: 50, pageMarginRight: 50, footer: "none",
+  });
+  tk.redoLayout();
+  pages = tk.getPageCount();
+  page = Math.max(1, Math.min(page, pages));
+  draw();
+}
 
+function draw() {
+  $("score").innerHTML = tk.renderToSVG(page);
+  $("pageinfo").textContent = `${page} / ${pages}`;
+  markLoop();
+}
+
+function turn(delta) {
+  const p = Math.max(1, Math.min(pages, page + delta));
+  if (p !== page) { page = p; draw(); }
+}
+
+function showControls() {
+  $("zoomout").disabled = opts.zoom <= 20; $("zoomin").disabled = opts.zoom >= 120;
+  $("tval").textContent = "Key " + (opts.transpose > 0 ? "+" : "") + opts.transpose;
+  $("tempo").value = opts.tempo; $("tempoval").textContent = opts.tempo + "%";
+  if (picking) $("loop").textContent = picking === "from" ? "Tap first bar" : "Tap last bar";
+  else $("loop").textContent = loop ? `🔁 Bars ${loop.from + 1}–${loop.to + 1} ✕` : "🔁 Loop";
+  $("hint").classList.toggle("hidden", !picking);
+  $("hint").textContent = picking === "from" ? "Tap the first bar of the loop" : "Now tap the last bar";
+}
+
+function save() {
+  clearTimeout(saveTimer);
+  const id = cur.id, settings = { ...opts };
+  saveTimer = setTimeout(() => patch(id, { settings }), 800);
+}
+
+function setOpt(k, v) { opts[k] = v; save(); showControls(); }
+
+$("zoomout").onclick = () => { setOpt("zoom", Math.max(20, opts.zoom - 5)); layout(); };
+$("zoomin").onclick = () => { setOpt("zoom", Math.min(120, opts.zoom + 5)); layout(); };
+$("tdown").onclick = () => { stop(); setOpt("transpose", Math.max(-12, opts.transpose - 1)); load(); };
+$("tup").onclick = () => { stop(); setOpt("transpose", Math.min(12, opts.transpose + 1)); load(); };
+$("tempo").oninput = (e) => { const wasPlaying = !!player; stop(); setOpt("tempo", +e.target.value); if (wasPlaying) play(); };
+
+$("loop").onclick = () => {
+  if (picking) picking = null;
+  else if (loop) { loop = null; stop(); markLoop(); }
+  else picking = "from";
+  showControls();
+};
+
+function markLoop() {
+  document.querySelectorAll("#score g.measure.inloop").forEach(m => m.classList.remove("inloop"));
+  const sel = picking === "to" ? { from: loop?.from, to: loop?.from } : loop;
+  if (!sel || sel.from == null) return;
+  for (let i = sel.from; i <= sel.to; i++) {
+    const el = document.getElementById(measures[i].id);
+    if (el) el.classList.add("inloop");
+  }
+}
+
+// The bar under a tap, including the blank space between notes.
+function measureAt(x, y) {
+  for (const m of document.querySelectorAll("#score g.measure")) {
+    const r = m.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top - 20 && y <= r.bottom + 20) return m;
+  }
+  return null;
+}
+
+// Taps: choose loop bars while picking, else left third = back, rest = forward.
+$("stage").addEventListener("click", (e) => {
+  if (e.target.closest("button")) return;
+  if (picking) {
+    const m = measureAt(e.clientX, e.clientY);
+    const i = m ? measures.findIndex(x => x.id === m.id) : -1;
+    if (i < 0) return;
+    if (picking === "from") { loop = { from: i, to: i }; picking = "to"; }
+    else { loop = { from: Math.min(loop.from, i), to: Math.max(loop.from, i) }; picking = null; }
+    markLoop(); showControls();
+    if (player) { stop(); play(); }
+    return;
+  }
+  const x = e.clientX - $("stage").getBoundingClientRect().left;
+  turn(x < $("stage").clientWidth / 3 ? -1 : 1);
+});
+
+// Keyboard and Bluetooth page-turn pedals (they send arrow / page keys).
+document.addEventListener("keydown", (e) => {
+  if ($("reader").classList.contains("hidden") || e.target.tagName === "INPUT") return;
+  if (["ArrowRight", "PageDown", "ArrowDown"].includes(e.key)) { e.preventDefault(); turn(1); }
+  else if (["ArrowLeft", "PageUp", "ArrowUp"].includes(e.key)) { e.preventDefault(); turn(-1); }
+  else if (e.key === " ") { e.preventDefault(); player ? stop() : play(); }
+  else if (e.key === "Escape" && document.body.classList.contains("full")) setFull(false);
+});
+
+async function setFull(on) {
+  document.body.classList.toggle("full", on);
+  try {
+    if (on && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    else if (!on && document.fullscreenElement) await document.exitFullscreen();
+  } catch {}
+  // Keep the screen on while reading (only works over HTTPS or localhost).
+  try {
+    if (on && navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen");
+    else if (!on && wakeLock) { wakeLock.release(); wakeLock = null; }
+  } catch {}
+  if (tk && !$("reader").classList.contains("hidden")) setTimeout(layout, 150);
+}
+$("full").onclick = () => setFull(true);
+$("exitfull").onclick = () => setFull(false);
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && document.body.classList.contains("full")) setFull(false); });
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  if (!tk || $("reader").classList.contains("hidden")) return;
+  clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 200);
+});
+
+$("back").onclick = () => { location.hash = ""; };
+
+// ---------- Playback ----------
 function stop() {
-  if (playing) { playing.dispose(); playing = null; Tone.Transport.stop(); Tone.Transport.cancel(); }
+  cancelAnimationFrame(raf); raf = null;
+  if (player) { Tone.Transport.stop(); Tone.Transport.cancel(); Tone.Transport.loop = false; player.dispose(); player = null; }
+  document.querySelectorAll("#score g.note.playing").forEach(n => n.classList.remove("playing"));
   $("play").textContent = "▶ Play";
 }
 
-$("play").onclick = async () => {
-  if (playing) return stop();
+async function play() {
   await Tone.start();
-  const bytes = Uint8Array.from(atob(midiB64), c => c.charCodeAt(0));
-  const midi = new Midi(bytes);
-  playing = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.005, decay: 0.3, sustain: 0.2, release: 0.8 } }).toDestination();
-  playing.volume.value = -10;
+  const midi = new Midi(Uint8Array.from(atob(midiB64), c => c.charCodeAt(0)));
+  const speed = opts.tempo / 100;
+  let from = 0, to = Infinity;
+  if (loop) {
+    from = measures[loop.from].ms / 1000;
+    to = loop.to + 1 < measures.length ? measures[loop.to + 1].ms / 1000 : Infinity;
+  }
+  player = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.005, decay: 0.3, sustain: 0.2, release: 0.8 } }).toDestination();
+  player.volume.value = -10;
+  const synth = player;
   let end = 0;
   for (const track of midi.tracks) for (const n of track.notes) {
-    Tone.Transport.schedule((t) => playing && playing.triggerAttackRelease(n.name, n.duration, t, n.velocity), n.time);
-    end = Math.max(end, n.time + n.duration);
+    if (n.time < from - 0.001 || n.time >= to - 0.001) continue;
+    const t = (n.time - from) / speed;
+    const dur = Math.min(n.duration, to - n.time) / speed;
+    Tone.Transport.schedule((time) => synth.triggerAttackRelease(n.name, dur, time, n.velocity), t);
+    end = Math.max(end, t + dur);
   }
-  Tone.Transport.schedule(() => stop(), end + 1);
+  if (loop) {
+    Tone.Transport.loop = true; Tone.Transport.loopStart = 0;
+    Tone.Transport.loopEnd = (to === Infinity ? end * speed + from : to - from) / speed;
+  } else {
+    Tone.Transport.schedule(() => setTimeout(stop, 0), end + 0.8);
+  }
   Tone.Transport.start("+0.1");
   $("play").textContent = "■ Stop";
-};
+  follow(from, speed);
+}
 
-refresh();
+// Highlight the notes being played and turn the page to follow along.
+function follow(from, speed) {
+  let last = "";
+  const tick = () => {
+    if (!player) return;
+    const ms = (from + Tone.Transport.seconds * speed) * 1000;
+    const at = tk.getElementsAtTime(Math.round(ms));
+    const key = (at.notes || []).join();
+    if (key !== last) {
+      last = key;
+      if (at.page && at.page !== page) { page = at.page; draw(); }
+      document.querySelectorAll("#score g.note.playing").forEach(n => n.classList.remove("playing"));
+      for (const id of at.notes || []) document.getElementById(id)?.classList.add("playing");
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+}
+
+$("play").onclick = () => (player ? stop() : play());
+
+// ---------- Routing ----------
+function route() {
+  const m = location.hash.match(/^#score\/(\w+)/);
+  if (m) return openScore(m[1]);
+  stop(); setFull(false);
+  $("reader").classList.add("hidden");
+  $("library").classList.remove("hidden"); document.querySelector("header").classList.remove("hidden");
+  refresh();
+}
+window.addEventListener("hashchange", route);
+route();
 </script>
 </body>
 </html>

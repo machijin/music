@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +22,7 @@ ALLOWED = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="Sheet music")
 _one_at_a_time = threading.Lock()  # Audiveris is memory-hungry; run one job at a time.
+_edit_lock = threading.Lock()  # guards job.json read-modify-write
 
 
 def _job_dir(job_id: str) -> Path:
@@ -42,11 +44,35 @@ def _write(d: Path, job: dict) -> None:
     tmp.replace(d / "job.json")
 
 
-def _run(d: Path) -> None:
-    job = _read(d)
-    with _one_at_a_time:
-        job.update(status="working", started=time.time())
+def _thumbnail(d: Path, src: Path) -> None:
+    """Small PNG of the first page of the upload, for the library."""
+    out = d / "thumb.png"
+    try:
+        if src.suffix == ".pdf":
+            subprocess.run(["pdftoppm", "-png", "-singlefile", "-f", "1", "-l", "1",
+                            "-scale-to", "360", str(src), str(d / "thumb")],
+                           capture_output=True, timeout=60)
+        else:
+            from PIL import Image
+            with Image.open(src) as im:
+                im.thumbnail((360, 360))
+                im.convert("RGB").save(out)
+    except Exception:
+        pass  # A missing thumbnail is fine; the page shows a placeholder.
+
+
+def _update(d: Path, **fields) -> dict:
+    """Change some fields of a job without losing edits made meanwhile."""
+    with _edit_lock:
+        job = _read(d)
+        job.update(fields)
         _write(d, job)
+        return job
+
+
+def _run(d: Path) -> None:
+    with _one_at_a_time:
+        job = _update(d, status="working", started=time.time())
         out = d / "out"
         out.mkdir(exist_ok=True)
         cmd = [AUDIVERIS, "-batch", "-export", "-output", str(out), "--", str(d / job["input"])]
@@ -57,15 +83,14 @@ def _run(d: Path) -> None:
             if scores:
                 # Keep a stable name for the first (often only) movement.
                 shutil.copy(scores[0], d / "score.mxl")
-                job.update(status="done", movements=len(scores))
+                result = dict(status="done", movements=len(scores))
             else:
-                job.update(status="failed", error="Audiveris found no music in this file.")
+                result = dict(status="failed", error="Audiveris found no music in this file.")
         except subprocess.TimeoutExpired:
-            job.update(status="failed", error=f"Took longer than {TIMEOUT // 60} minutes.")
+            result = dict(status="failed", error=f"Took longer than {TIMEOUT // 60} minutes.")
         except FileNotFoundError:
-            job.update(status="failed", error="Audiveris is not installed in this container.")
-        job["finished"] = time.time()
-        _write(d, job)
+            result = dict(status="failed", error="Audiveris is not installed in this container.")
+        _update(d, finished=time.time(), **result)
 
 
 @app.post("/api/scores")
@@ -81,6 +106,7 @@ async def upload(file: UploadFile):
     title = Path(file.filename).stem
     _write(d, {"id": job_id, "title": title, "input": f"input{ext}",
                "status": "queued", "created": time.time()})
+    _thumbnail(d, d / f"input{ext}")
     threading.Thread(target=_run, args=(d,), daemon=True).start()
     return _read(d)
 
@@ -94,6 +120,52 @@ def list_scores():
 @app.get("/api/scores/{job_id}")
 def get_score(job_id: str):
     return _read(_job_dir(job_id))
+
+
+class ScoreUpdate(BaseModel):
+    title: str | None = None
+    composer: str | None = None
+    settings: dict | None = None  # reader settings: zoom, transpose, tempo
+
+
+
+@app.patch("/api/scores/{job_id}")
+def update_score(job_id: str, body: ScoreUpdate):
+    d = _job_dir(job_id)
+    with _edit_lock:
+        job = _read(d)
+        if body.title is not None and body.title.strip():
+            job["title"] = body.title.strip()[:200]
+        if body.composer is not None:
+            job["composer"] = body.composer.strip()[:200]
+        if body.settings is not None:
+            job["settings"] = {**job.get("settings", {}), **body.settings}
+        _write(d, job)
+    return job
+
+
+@app.delete("/api/scores/{job_id}")
+def delete_score(job_id: str):
+    d = _job_dir(job_id)
+    if _read(d)["status"] in ("queued", "working"):
+        raise HTTPException(409, "Still being read; delete it when it's finished.")
+    shutil.rmtree(d)
+    return {"deleted": job_id}
+
+
+@app.get("/api/scores/{job_id}/thumb.png")
+def thumb(job_id: str):
+    p = _job_dir(job_id) / "thumb.png"
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p, media_type="image/png")
+
+
+@app.get("/api/scores/{job_id}/original")
+def original(job_id: str):
+    d = _job_dir(job_id)
+    job = _read(d)
+    return FileResponse(d / job["input"], filename=job["title"] + Path(job["input"]).suffix)
 
 
 @app.get("/api/scores/{job_id}/score.mxl")
