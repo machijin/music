@@ -11,6 +11,7 @@ Upload a PDF or a photo of a printed score. [Audiveris](https://github.com/Audiv
   - **A− / A+** changes the size, **♭ / ♯** transposes by a semitone, and the slider sets the speed (40–150%). These are saved per score on the server, so the tablet and phone match.
   - **🔁 Loop:** tap the first bar, then the last. Play repeats those bars. Tap the button again to clear the loop.
   - **▶ Play** plays the score with the current notes highlighted, turning pages as it goes. Space starts and stops playback.
+  - **🎹 Piano / 〰️ Simple** picks the sound: recordings of a real grand piano (the default), or the light built-in synth for slow devices. The choice is remembered per device. The piano's recordings (5.5 MB) load the first time you press Play.
   - **⛶** goes full screen and hides the controls; ☰ in the corner brings them back. The screen only stays awake over HTTPS (browser rule), so on plain `http://` set the tablet's auto-lock to "never" while practicing.
 
 ## Run it
@@ -35,6 +36,11 @@ For Portainer: add a **Repository** stack pointing at this repo with `docker-com
 - `app/main.py`: FastAPI. `POST /api/scores` stores the upload in `data/jobs/<id>/`, makes `thumb.png` (pdftoppm or Pillow), and runs `Audiveris -batch -export` in the background, one job at a time. `GET /api/scores` lists jobs; `PATCH /api/scores/<id>` changes `title`, `composer` or reader `settings`; `DELETE` removes a score. Files: `score.mxl`, `thumb.png`, `original`, `log`.
 - `app/static/index.html`: library (`#`) and reader (`#score/<id>`). Verovio draws the score page by page, transposes, makes the MIDI and the timing map used for looping and following along; Tone.js plays it.
 - The browser libraries are fetched from npm at build time (`tools/vendor.sh`), so nothing loads from a CDN at runtime. For local development without Docker, run `sh tools/vendor.sh` once.
+
+## Credits
+
+- Piano sound: [Salamander Grand Piano V3](https://archive.org/details/SalamanderGrandPianoV3) by Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), via the npm package `@audio-samples/piano-mp3-velocity8`.
+- [Audiveris](https://github.com/Audiveris/audiveris) (AGPL-3.0), [Verovio](https://www.verovio.org) (LGPL-3.0), [Tone.js](https://tonejs.github.io) (MIT), [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT).
 
 ## Plan
 

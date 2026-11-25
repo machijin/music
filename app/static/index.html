@@ -96,6 +96,7 @@
     <span class="group" title="Transpose (semitones)"><button id="tdown">♭</button><span id="tval">Key 0</span><button id="tup">♯</button></span>
     <span class="group" title="Speed"><input type="range" id="tempo" min="40" max="150" step="5"><span id="tempoval">100%</span></span>
     <button id="loop" title="Tap the first and last bar to loop">🔁 Loop</button>
+    <button id="instrument" title="Sound: grand piano or simple">🎹 Piano</button>
     <button id="play" class="primary">▶ Play</button>
     <button id="full" title="Full screen">⛶</button>
     <a class="btn" id="dl-mid" title="Download MIDI">MIDI</a>
@@ -376,15 +377,71 @@ window.addEventListener("resize", () => {
 $("back").onclick = () => { location.hash = ""; };
 
 // ---------- Playback ----------
-function stop() {
-  cancelAnimationFrame(raf); raf = null;
-  if (player) { Tone.Transport.stop(); Tone.Transport.cancel(); Tone.Transport.loop = false; player.dispose(); player = null; }
-  document.querySelectorAll("#score g.note.playing").forEach(n => n.classList.remove("playing"));
-  $("play").textContent = "▶ Play";
+// Two instruments: a sampled grand piano (Salamander Grand Piano by Alexander Holm,
+// CC BY 3.0, bundled in vendor/piano/) and the simple built-in synth for slow devices.
+const PIANO_NOTES = [
+  "A0", ...[1, 2, 3, 4, 5, 6, 7].flatMap(o => [`C${o}`, `D#${o}`, `F#${o}`, `A${o}`]), "C8",
+];
+let instrumentName = "piano";
+try { instrumentName = localStorage.getItem("music.instrument") || "piano"; } catch {}
+let piano = null;  // loaded once, kept between plays
+
+async function getPiano() {
+  if (piano) return piano;
+  const urls = Object.fromEntries(PIANO_NOTES.map(n => [n, n.replace("#", "s") + ".mp3"]));
+  const reverb = new Tone.Reverb({ decay: 2.2, wet: 0.18 }).toDestination();
+  await reverb.generate();
+  const sampler = new Tone.Sampler({ urls, baseUrl: "vendor/piano/", release: 1.2 }).connect(reverb);
+  sampler.volume.value = 2;
+  await Tone.loaded();
+  piano = sampler;
+  return piano;
 }
 
+async function getInstrument() {
+  if (instrumentName === "piano") {
+    try { return await getPiano(); } catch (e) { console.warn("Piano didn't load, using the simple sound", e); }
+  }
+  const synth = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.005, decay: 0.3, sustain: 0.2, release: 0.8 } }).toDestination();
+  synth.volume.value = -10;
+  return synth;
+}
+
+function showInstrument() {
+  $("instrument").textContent = instrumentName === "piano" ? "🎹 Piano" : "〰️ Simple";
+}
+$("instrument").onclick = () => {
+  const wasPlaying = !!player;
+  stop();
+  instrumentName = instrumentName === "piano" ? "simple" : "piano";
+  try { localStorage.setItem("music.instrument", instrumentName); } catch {}
+  showInstrument();
+  if (wasPlaying) play();
+};
+showInstrument();
+
+function stop() {
+  cancelAnimationFrame(raf); raf = null;
+  if (player) {
+    Tone.Transport.stop(); Tone.Transport.cancel(); Tone.Transport.loop = false;
+    player.releaseAll();
+    if (player !== piano) player.dispose();
+    player = null;
+  }
+  document.querySelectorAll("#score g.note.playing").forEach(n => n.classList.remove("playing"));
+  $("play").textContent = "▶ Play";
+  $("play").disabled = false;
+}
+
+let starting = false;
 async function play() {
+  if (starting) return;
+  starting = true;
   await Tone.start();
+  if (instrumentName === "piano" && !piano) { $("play").textContent = "Loading piano…"; $("play").disabled = true; }
+  const inst = await getInstrument();
+  $("play").disabled = false;
+  starting = false;
   const midi = new Midi(Uint8Array.from(atob(midiB64), c => c.charCodeAt(0)));
   const speed = opts.tempo / 100;
   let from = 0, to = Infinity;
@@ -392,22 +449,20 @@ async function play() {
     from = measures[loop.from].ms / 1000;
     to = loop.to + 1 < measures.length ? measures[loop.to + 1].ms / 1000 : Infinity;
   }
-  player = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.005, decay: 0.3, sustain: 0.2, release: 0.8 } }).toDestination();
-  player.volume.value = -10;
-  const synth = player;
+  player = inst;
   let end = 0;
   for (const track of midi.tracks) for (const n of track.notes) {
     if (n.time < from - 0.001 || n.time >= to - 0.001) continue;
     const t = (n.time - from) / speed;
     const dur = Math.min(n.duration, to - n.time) / speed;
-    Tone.Transport.schedule((time) => synth.triggerAttackRelease(n.name, dur, time, n.velocity), t);
+    Tone.Transport.schedule((time) => inst.triggerAttackRelease(n.name, dur, time, n.velocity), t);
     end = Math.max(end, t + dur);
   }
   if (loop) {
     Tone.Transport.loop = true; Tone.Transport.loopStart = 0;
     Tone.Transport.loopEnd = (to === Infinity ? end * speed + from : to - from) / speed;
   } else {
-    Tone.Transport.schedule(() => setTimeout(stop, 0), end + 0.8);
+    Tone.Transport.schedule(() => setTimeout(stop, 0), end + 1.2);
   }
   Tone.Transport.start("+0.1");
   $("play").textContent = "■ Stop";
@@ -445,7 +500,8 @@ function route() {
   refresh();
 }
 window.addEventListener("hashchange", route);
-route();
+// The libraries load with `defer`, so they're ready by DOMContentLoaded, not before.
+document.addEventListener("DOMContentLoaded", route);
 </script>
 </body>
 </html>
