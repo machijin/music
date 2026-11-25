@@ -1,5 +1,7 @@
 # Stage 1: build Audiveris (the sheet-music reader) from source.
-FROM eclipse-temurin:25-jdk AS audiveris
+# Both Java images are pinned to Ubuntu 24.04 (noble): the plain 25-jdk/25-jre tags moved
+# to Ubuntu 26.04 with Python 3.14, which the pinned Python packages have no wheels for.
+FROM eclipse-temurin:25-jdk-noble AS audiveris
 ARG AUDIVERIS_VERSION=5.9.0
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 --branch ${AUDIVERIS_VERSION} https://github.com/Audiveris/audiveris /src
@@ -16,7 +18,7 @@ COPY tools/vendor.sh /v/vendor.sh
 RUN sh /v/vendor.sh /v/out
 
 # Stage 3: the web service.
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre-noble
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv poppler-utils fontconfig fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
